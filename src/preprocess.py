@@ -125,7 +125,7 @@ def clahe_equalization(
         hsv[:, :, 2] = clahe.apply(hsv[:, :, 2])
         return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
     else:
-        return cv2.equalizeHist(image)
+        return clahe.apply(image)
 
 
 def laplacian_sharpen(image: np.ndarray, alpha: float = 1.0) -> np.ndarray:
