@@ -58,7 +58,7 @@ def detect_corners(
         cv2.drawChessboardCorners(img, board_size, corners, found)
         cv2.namedWindow("Detected Corners", cv2.WINDOW_NORMAL)
         cv2.imshow("Detected Corners", img)
-        cv2.waitKey(2000)
+        cv2.waitKey(1000)
 
     cv2.destroyAllWindows()
 
@@ -112,8 +112,8 @@ def undistort_image(
         np.ndarray: Undistorted image.
     """
     h, w = image.shape[:2]
-    new_mtx, _ = cv2.getOptimalNewCameraMatrix(
-        camera_matrix, dist_coeffs, (w, h), 1, (w, h)
+    new_mtx, roi = cv2.getOptimalNewCameraMatrix(
+        camera_matrix, dist_coeffs, (w, h), alpha=0
     )
     return cv2.undistort(image, camera_matrix, dist_coeffs, None, new_mtx)
 
