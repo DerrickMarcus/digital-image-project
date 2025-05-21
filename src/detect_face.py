@@ -9,13 +9,12 @@ def get_face_mask(image: np.ndarray) -> np.ndarray:
     mask = (
         cv2.inRange(hsv, (0, 40, 40), (25, 120, 240))
         | cv2.inRange(hsv, (155, 40, 40), (179, 120, 240))
-    ) & cv2.inRange(ycrcb, (0, 133, 77), (255, 173, 127))
-
-    # mask = cv2.inRange(ycrcb, (0, 133, 77), (255, 173, 127))
+        | cv2.inRange(ycrcb, (0, 133, 77), (255, 173, 127))
+    )
 
     cr = ycrcb[:, :, 1]
     _, mask_cr = cv2.threshold(cr, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    mask = mask & mask_cr
+    mask = mask | mask_cr
 
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
