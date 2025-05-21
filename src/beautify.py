@@ -1,43 +1,74 @@
 import cv2
 import numpy as np
 
-from detect_face import canny_edge, morphological
-from preprocess import bilateral_filter, clahe_equalization, hsi_to_rgb, rgb_to_hsi
+from detect_face import canny_edge
 
 
-def whiten_face(
+def whiten_lab_clahe(
     image: np.ndarray,
     face_mask: np.ndarray,
     clip_limit: float = 2.0,
-    tile_grid_size: tuple = (8, 8),
+    tile_grid_size: tuple[int, int] = (8, 8),
+    k_size: int = 21,
 ) -> np.ndarray:
-    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    hsi = rgb_to_hsi(rgb)
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    L = lab[..., 0]
 
+    # 对全局图像的L通道做均衡化
+    # mask = face_mask.astype(bool)
+    # clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
+    # L_eq = clahe.apply(l)
+    # lab[..., 0][mask] = L_eq[mask]
+
+    # 只对人脸区域的L通道做均衡化
     mask = face_mask.astype(bool)
-    i = (hsi[..., 2] * 255).astype(np.uint8)
-    i_eq = clahe_equalization(i, clip_limit, tile_grid_size)
-    i_eq = i_eq.astype(np.float32) / 255.0
+    L_face = L.copy()
+    L_face[~mask] = int(np.median(L[mask]))
 
-    hsi[:, :, 2][mask] = i_eq[mask]
-    hsi[:, :, 2] = np.clip(hsi[:, :, 2], 0.0, 1.0)
+    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
+    L_eq = clahe.apply(L_face)
 
-    whitened = cv2.cvtColor(hsi_to_rgb(hsi), cv2.COLOR_RGB2BGR)
-    return whitened
+    lab[..., 0][mask] = L_eq[mask]
+
+    result = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+    alpha = cv2.GaussianBlur(
+        (face_mask / 255.0).astype(np.float32), (k_size, k_size), 0
+    )[..., None]
+    blended = (
+        image.astype(np.float32) * (1.0 - alpha) + result.astype(np.float32) * alpha
+    )
+    return np.clip(blended, 0, 255).astype(np.uint8)
 
 
-def smooth_skin(
+def smooth_skin_guided(
     image: np.ndarray,
     face_mask: np.ndarray,
-    diameter: int = 9,
-    sigma_color: float = 75,
-    sigma_space: float = 75,
+    radius: int = 8,
+    eps: float = 1e-2,
+    k_size: int = 11,
 ) -> np.ndarray:
-    smoothed = bilateral_filter(image, diameter, sigma_color, sigma_space)
-    out = image.copy()
-    mask = face_mask.astype(bool)
-    out[mask] = smoothed[mask]
-    return out
+    """
+    radius: 引导滤波的邻域半径。
+    eps: 引导滤波的平滑因子（越小保留边缘越强）。
+    """
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    L = lab[..., 0].copy()
+
+    L_f = L.astype(np.float32) / 255.0
+    L_guided = cv2.ximgproc.guidedFilter(guide=L_f, src=L_f, radius=radius, eps=eps)
+    L_u = (L_guided * 255.0).astype(np.uint8)
+
+    lab[..., 0] = L_u
+    result = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+    alpha = cv2.GaussianBlur(
+        (face_mask / 255.0).astype(np.float32), (k_size, k_size), 0
+    )[..., None]
+    blended = (
+        image.astype(np.float32) * (1.0 - alpha) + result.astype(np.float32) * alpha
+    )
+    return np.clip(blended, 0, 255).astype(np.uint8)
 
 
 def squeeze_face(
@@ -68,7 +99,8 @@ def enlarge_eyes(
     roi[mask] = gray[mask]
 
     edges = canny_edge(roi, low_thresh=edge_low, high_thresh=edge_high)
-    clean = morphological(edges, op="open", k_size=k_size)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
+    clean = cv2.morphologyEx(edges, cv2.MORPH_OPEN, kernel, iterations=1)
 
     contours, _ = cv2.findContours(clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     eyes = []

@@ -123,5 +123,6 @@ if __name__ == "__main__":
     board_size = (10, 7)
     square_size = 25
     obj_p, img_p, shape = detect_corners(pattern, board_size, square_size)
+    print(f"Detected {len(obj_p)} images with corners.")
     K, d = calibrate_camera(obj_p, img_p, shape)
     np.savez("src/calib_params.npz", camera_matrix=K, dist_coeffs=d)

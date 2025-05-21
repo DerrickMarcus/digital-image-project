@@ -64,7 +64,7 @@
 
 `beautigy.py` 模块：
 
-`whiten_face()` 美白函数，将图片转换到 HSI，仅对亮度通道进行 CLAHE 均衡化，再与面部掩膜融合，最后转换回 RGB。
+`whiten_face()` 美白函数，将图片转换到 LAB 空间，仅对 L 通道进行 CLAHE 均衡化，再与面部掩膜融合，最后转换回 RGB。
 
 `smooth_skin()` 磨皮函数，对图像进行双边滤波处理，再与面部掩膜融合。
 

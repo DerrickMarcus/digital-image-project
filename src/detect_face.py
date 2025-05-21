@@ -17,7 +17,7 @@ def get_face_mask(image: np.ndarray) -> np.ndarray:
     _, mask_cr = cv2.threshold(cr, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     mask = mask & mask_cr
 
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
 
@@ -43,7 +43,7 @@ def otsu_threshold(gray: np.ndarray) -> tuple[np.ndarray, int]:
 
 
 def adaptive_threshold(
-    gray: np.ndarray, max_value: int = 255, block_size: int = 11, C: int = 2
+    gray: np.ndarray, max_value: int = 255, block_size: int = 301, C: int = 2
 ) -> np.ndarray:
     binary = cv2.adaptiveThreshold(
         gray, max_value, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, block_size, C
@@ -64,21 +64,3 @@ def canny_edge(
     gray: np.ndarray, low_thresh: int = 50, high_thresh: int = 150
 ) -> np.ndarray:
     return cv2.Canny(gray, low_thresh, high_thresh)
-
-
-def morphological(mask: np.ndarray, op: str = "open", k_size: int = 5) -> np.ndarray:
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
-    if op == "erode":
-        return cv2.erode(mask, kernel)
-    elif op == "dilate":
-        return cv2.dilate(mask, kernel)
-    elif op == "open":
-        return cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    elif op == "close":
-        return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    elif op == "tophat":
-        return cv2.morphologyEx(mask, cv2.MORPH_TOPHAT, kernel)
-    elif op == "blackhat":
-        return cv2.morphologyEx(mask, cv2.MORPH_BLACKHAT, kernel)
-    else:
-        raise ValueError(f"Unsupported operation: {op}.")
