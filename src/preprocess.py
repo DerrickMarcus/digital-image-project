@@ -84,6 +84,7 @@ def median_filter(image: np.ndarray, k_size: int = 5) -> np.ndarray:
 def gaussian_filter(
     image: np.ndarray, k_size: int = 15, sigma: float = 2.0
 ) -> np.ndarray:
+    # k_szie 约等于 6 * sigma + 1
     return cv2.GaussianBlur(image, (k_size, k_size), sigma)
 
 
@@ -132,7 +133,7 @@ def laplacian_sharpen(
     image: np.ndarray, alpha: float = 1.0, k_size: int = 3
 ) -> np.ndarray:
     img_f = image.astype(np.float32)
-    lap = cv2.Laplacian(img_f, cv2.CV_32F, ksize=k_size)
+    lap = cv2.Laplacian(img_f, ddepth=cv2.CV_32F, ksize=k_size)
     sharp = img_f + alpha * lap
     return np.clip(sharp, 0, 255).astype(np.uint8)
 
@@ -148,3 +149,17 @@ def unsharp_mask(
     mask = cv2.subtract(image, blurred)
     sharpened = cv2.addWeighted(image, 1.0, mask, amount, 0)
     return np.clip(sharpened, 0, 255).astype(np.uint8)
+
+
+if __name__ == "__main__":
+    img = cv2.imread("images/111.jpg")
+    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    hsi = rgb_to_hsi(rgb)
+    rgb_new = hsi_to_rgb(hsi)
+
+    mse = np.mean((rgb - rgb_new) ** 2)
+    print(
+        f"Mean Squared Error (MSE) between original and reconstructed image: {mse:.4f}"
+    )
+    max_err = np.max(np.abs(rgb - rgb_new))
+    print(f"Max Error: {max_err:.4f}")

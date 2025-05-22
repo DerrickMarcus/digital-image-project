@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 
-from detect_face import canny_edge
 from preprocess import hsi_to_rgb, rgb_to_hsi
 
 
@@ -189,55 +188,154 @@ def smooth_skin_guided(
     return np.clip(blended, 0, 255).astype(np.uint8)
 
 
-def squeeze_face(
-    image: np.ndarray, face_mask: np.ndarray, gain: float = 0.9
+def slim_face(
+    image: np.ndarray, face_mask: np.ndarray, gain: float = 0.9, k_size: int = 15
 ) -> np.ndarray:
     h, w = image.shape[:2]
-    map_x, map_y = np.meshgrid(np.arange(w), np.arange(h))
-    center_x = w / 2.0
-    mask = face_mask.astype(bool)
-
-    map_x[mask] = center_x + (map_x[mask] - center_x) * gain
-    map_x = np.clip(map_x, 0, w - 1).astype(np.float32)
-    map_y = map_y.astype(np.float32)
-    return cv2.remap(image, map_x, map_y, interpolation=cv2.INTER_LINEAR)
-
-
-def enlarge_eyes(
-    image: np.ndarray,
-    face_mask: np.ndarray,
-    gain: float = 1.1,
-    edge_low: int = 50,
-    edge_high: int = 150,
-    k_size: int = 5,
-) -> np.ndarray:
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    mask = face_mask.astype(bool)
-    roi = np.zeros_like(gray)
-    roi[mask] = gray[mask]
-
-    edges = canny_edge(roi, low_thresh=edge_low, high_thresh=edge_high)
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_size, k_size))
-    clean = cv2.morphologyEx(edges, cv2.MORPH_OPEN, kernel, iterations=1)
-
-    contours, _ = cv2.findContours(clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    eyes = []
-    for cnt in sorted(contours, key=cv2.contourArea, reverse=True)[:2]:
-        (x, y), r = cv2.minEnclosingCircle(cnt)
-        eyes.append((int(x), int(y), int(r)))
-    if not eyes:
+    _, xs = np.where(face_mask > 0)
+    if xs.size == 0:
         return image
 
-    h, w = image.shape[:2]
+    x_min = max(int(xs.min()), w / 6)
+    x_max = min(int(xs.max()), w * 5 / 6)
+    x_center = (x_min + x_max) / 2.0
+    w_face = x_max - x_min
+    x_L = int(np.floor(x_center - w_face / 2.0 * gain))
+    x_R = int(np.ceil(x_center + w_face / 2.0 * gain))
+
     map_x, map_y = np.meshgrid(np.arange(w), np.arange(h))
-    for cx, cy, r in eyes:
-        dx = map_x - cx
-        dy = map_y - cy
-        mask_eye = dx * dx + dy * dy <= r * r
-        map_x[mask_eye] = cx + dx[mask_eye] * gain
-        map_y[mask_eye] = cy + dy[mask_eye] * gain
+    map_x = map_x.astype(np.float32)
+    map_y = map_y.astype(np.float32)
+
+    map_x[:, :x_L] = np.linspace(0, x_min - 1, x_L)[None, :]
+    map_x[:, x_L : x_R + 1] = np.linspace(x_min, x_max, x_R - x_L + 1)[None, :]
+    map_x[:, x_R + 1 :] = np.linspace(x_max + 1, w - 1, w - x_R - 1)[None, :]
 
     map_x = np.clip(map_x, 0, w - 1).astype(np.float32)
-    map_y = np.clip(map_y, 0, h - 1).astype(np.float32)
+    map_x = cv2.GaussianBlur(map_x, (k_size, k_size), 0)
+
     return cv2.remap(image, map_x, map_y, interpolation=cv2.INTER_LINEAR)
-    return cv2.remap(image, map_x, map_y, interpolation=cv2.INTER_LINEAR)
+
+
+def get_eyes_mask(image: np.ndarray) -> np.ndarray:
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    ycrcb = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
+    # lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+
+    mask = (
+        cv2.inRange(hsv, (0, 40, 40), (25, 120, 240))
+        | cv2.inRange(hsv, (155, 40, 40), (179, 120, 240))
+        | cv2.inRange(ycrcb, (0, 133, 77), (255, 173, 127))
+        # | cv2.inRange(lab[..., 0], 0, 128)
+        # | cv2.inRange(lab, (0, 128 - 5, 128 - 5), (255, 128 - 5, 128 + 20))
+    )
+
+    cr = ycrcb[:, :, 1]
+    _, mask_cr = cv2.threshold(cr, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    mask = mask | mask_cr
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (45, 45))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    final = np.zeros_like(mask)
+    if contours:
+        c = max(contours, key=cv2.contourArea)
+        cv2.drawContours(final, [c], -1, 255, thickness=-1)
+
+    final = mask
+
+    # 膨胀操作使得轮廓扩大
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+    final = cv2.dilate(final, kernel, iterations=1)
+
+    final = cv2.GaussianBlur(final, (51, 51), 0)
+    _, final = cv2.threshold(final, 128, 255, cv2.THRESH_BINARY)
+
+    return final
+
+
+def get_eyes_mask_hough(
+    image: np.ndarray,
+    face_mask: np.ndarray,
+    dp: float = 1.2,
+    min_dist_ratio: float = 0.25,
+    canny_thresh1: int = 50,
+    canny_thresh2: int = 150,
+    hough_param2: int = 30,
+    radius_ratio: tuple[float, float] = (0.05, 0.15),
+) -> np.ndarray:
+    """
+    基于 Canny + HoughCircles 检测双眼，并返回眼睛区域二值掩膜。
+
+    Args:
+        image: BGR 原图, shape (H, W, 3).
+        face_mask: 人脸区域二值掩膜, shape (H, W), 0 or 255.
+        dp: Hough 圆检测累加器分辨率比 (image / dp).
+        min_dist_ratio: 两眼最小距离占脸宽比例, 默认 0.25.
+        canny_thresh1/2: Canny 边缘检测低/高阈值.
+        hough_param2: HoughCircles 参数2（累加器阈值，越大越少检测）。
+        radius_ratio: (minRadius_ratio, maxRadius_ratio) 相对于脸宽。
+
+    Returns:
+        eyes_mask: 0/255 二值图, 只有检测到的左右眼圆区域为白。
+    """
+    h, w = image.shape[:2]
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # 1) 在 face_mask ROI 内裁剪上半脸
+    ys, xs = np.where(face_mask > 0)
+    if xs.size == 0:
+        return np.zeros((h, w), np.uint8)
+    y_min, y_max = ys.min(), ys.max()
+    y_mid = int((y_min + y_max) / 2)
+    roi_gray = gray[y_min:y_mid, :]
+    roi_w = roi_gray.shape[1]
+    # 2) 边缘检测
+    edges = cv2.Canny(roi_gray, canny_thresh1, canny_thresh2)
+
+    # 3) Hough 圆检测
+    min_dist = max(1, int(roi_w * min_dist_ratio))
+    r_min = int(roi_w * radius_ratio[0])
+    r_max = int(roi_w * radius_ratio[1])
+    circles = cv2.HoughCircles(
+        edges,
+        cv2.HOUGH_GRADIENT,
+        dp=dp,
+        minDist=min_dist,
+        param1=canny_thresh2,
+        param2=hough_param2,
+        minRadius=r_min,
+        maxRadius=r_max,
+    )
+
+    # 4) 没检测到任何圆
+    if circles is None:
+        return np.zeros((h, w), np.uint8)
+
+    # 5) 取最左和最右各一个圆
+    circles = np.round(circles[0]).astype(int)
+    # 加上 ROI y_offset
+    circles[:, 1] += y_min
+
+    # 按 cx 排序，左右各一个
+    circles = sorted(circles, key=lambda c: c[0])
+    chosen = []
+    if len(circles) >= 1:
+        chosen.append(circles[0])
+    if len(circles) >= 2:
+        chosen.append(circles[-1])
+
+    # 6) 画圆掩膜
+    eyes_mask = np.zeros((h, w), np.uint8)
+    for x, y, r in chosen:
+        cv2.circle(eyes_mask, (x, y), r, 255, thickness=-1)
+
+    # 7) 可选羽化
+    kernel = int(r / 2) * 2 + 1
+    eyes_mask = cv2.GaussianBlur(eyes_mask, (kernel, kernel), 0)
+    _, eyes_mask = cv2.threshold(eyes_mask, 128, 255, cv2.THRESH_BINARY)
+
+    return eyes_mask
