@@ -77,37 +77,6 @@ def hsi_to_rgb(hsi: np.ndarray) -> np.ndarray:
     return rgb
 
 
-def median_filter(image: np.ndarray, k_size: int = 5) -> np.ndarray:
-    return cv2.medianBlur(image, k_size)
-
-
-def gaussian_filter(
-    image: np.ndarray, k_size: int = 15, sigma: float = 2.0
-) -> np.ndarray:
-    # k_szie 约等于 6 * sigma + 1
-    return cv2.GaussianBlur(image, (k_size, k_size), sigma)
-
-
-def bilateral_filter(
-    image: np.ndarray,
-    diameter: int = 9,
-    sigma_color: float = 75.0,
-    sigma_space: float = 75.0,
-) -> np.ndarray:
-    """Apply bilateral filtering.
-
-    Args:
-        image (np.ndarray): Input image.
-        diameter (int, optional): Diameter of the pixel neighborhood. Defaults to 5.
-        sigma_color (float, optional): Filter sigma in color space. Defaults to 75.
-        sigma_space (float, optional): Filter sigma in coordinate space. Defaults to 75.
-
-    Returns:
-        np.ndarray: Filtered image.
-    """
-    return cv2.bilateralFilter(image, diameter, sigma_color, sigma_space)
-
-
 def histogram_equalization(image: np.ndarray) -> np.ndarray:
     if len(image.shape) == 3:
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
