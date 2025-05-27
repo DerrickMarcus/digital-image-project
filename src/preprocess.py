@@ -121,7 +121,7 @@ def unsharp_mask(
 
 
 if __name__ == "__main__":
-    img = cv2.imread("images/111.jpg")
+    img = cv2.imread("images/222.jpg")
     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     hsi = rgb_to_hsi(rgb)
     rgb_new = hsi_to_rgb(hsi)
